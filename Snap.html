@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>運動課程雲端日曆 (動態使用者記憶版)</title>
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: sans-serif; }
+        .fc-event { cursor: pointer; padding: 2px 4px; border-radius: 4px; border: none !important; }
+        .fc-event-title { font-weight: 600; text-shadow: 1px 1px 2px rgba(0,0,0,0.6); color: white !important; }
+        /* 💡 修正：如果一天課程太多，讓格子裡的內容能稍微緊湊一點，增加閱讀舒適度 */
+        .fc-daygrid-day-events { margin-bottom: 2px !important; }
+    </style>
+</head>
+<body class="bg-slate-100 p-2 sm:p-4">
+
+    <div class="max-w-4xl mx-auto bg-white p-3 sm:p-6 rounded-2xl shadow-lg">
+        <h1 class="text-xl sm:text-2xl font-bold text-center mb-4 text-emerald-600">🏋️‍♂️ 雲端課表共用日曆 (動態名單+自動記憶)</h1>
+        
+        <div class="mb-4 p-3 bg-emerald-50 rounded-xl flex items-center justify-between text-sm shadow-sm">
+            <div>當前操作者: <strong id="current-user" class="text-emerald-700 text-base">載入中...</strong></div>
+            <select id="user-switcher" class="border rounded-lg p-1 bg-white" onchange="switchUser(this.value)">
+                <option value="">載入名單中...</option>
+            </select>
+        </div>
+
+        <div id="calendar" class="bg-white p-1 rounded-xl"></div>
+    </div>
+
+    <div id="modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl p-6 max-w-xl w-full shadow-2xl">
+            <h3 class="text-lg font-bold text-gray-800 mb-4" id="modal-title">課程詳情</h3>
+            
+            <div id="class-select-block" class="mb-4 hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-1">選擇當日固定課程</label>
+                <select id="modal-class-dropdown" class="w-full border border-gray-300 p-2.5 rounded-xl bg-amber-50 font-medium" onchange="handleDropdownChange(this.value)">
+                </select>
+                <input type="text" id="modal-class-name" class="w-full border border-gray-300 p-2.5 rounded-xl mt-2 hidden" placeholder="請輸入自訂課程名稱">
+            </div>
+
+            <div id="class-table-block" class="mb-5 hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-2">👥 預約隊員與狀態清單</label>
+                <div class="overflow-x-auto border border-gray-200 rounded-xl">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left font-semibold text-gray-600">上課隊員</th>
+                                <th class="px-3 py-2 text-left font-semibold text-gray-600">出席狀態</th>
+                                <th class="px-3 py-2 text-left font-semibold text-gray-600">原先隊員</th>
+                                <th class="px-3 py-2 text-center text-gray-400">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="attendee-table-body" class="divide-y divide-gray-200 bg-white">
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="mt-4 p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center">
+                    <p class="text-slate-600 text-sm font-semibold mb-3">以當前操作者身份快速報名此課程</p>
+                    <div class="flex gap-2 justify-center">
+                        <button onclick="quickAddMe('Registered')" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded-lg transition shadow-sm">
+                            Registered (已登記)
+                        </button>
+                        <button onclick="quickAddMe('Confirm to attend')" class="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-700 text-xs font-bold rounded-lg transition shadow-sm">
+                            Confirm to attend (確認出席)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="modal-footer-block" class="flex justify-end gap-2 text-sm border-t pt-4">
+                <button onclick="closeModal()" class="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-medium">關閉視窗</button>
+                <button id="save-registered-btn" onclick="saveNewEvent('Registered')" class="px-5 py-2.5 bg-red-600 text-white rounded-xl font-medium shadow-md hidden">Registered (已登記)</button>
+                <button id="save-confirm-btn" onclick="saveNewEvent('Confirm to attend')" class="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-medium shadow-md hidden">Confirm to attend (確認出席)</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+    <script>
+        const API_URL = "https://script.google.com/macros/s/AKfycbz9W3gjwlIigOEbmDnFt6NHAPZvAhJ2Lqp5AvH0f7EQ7bKvPbdKAn5FOKXn1-3C-E0i/exec";
+
+        let currentUser = "User_A"; 
+        let calendar;
+        let selectedEventData = null; 
+        let selectedDateStr = "";
+        let globalSchedules = {}; 
+        let currentFullCalendarEvent = null; 
+
+        window.switchUser = (val) => { 
+            if(!val) return;
+            currentUser = val; 
+            document.getElementById('current-user').innerText = val; 
+            localStorage.setItem('last_selected_gym_user', val); 
+        };
+        
+        window.closeModal = () => { document.getElementById('modal').classList.add('hidden'); };
+
+        window.handleDropdownChange = (val) => {
+            const customInput = document.getElementById('modal-class-name');
+            if (val === "__custom__") {
+                customInput.classList.remove('hidden');
+                customInput.value = "";
+                customInput.focus();
+            } else {
+                customInput.classList.add('hidden');
+                customInput.value = val;
+            }
+        };
+
+        async function loadDataAndRender() {
+            try {
+                const response = await fetch(`${API_URL}?_=${new Date().getTime()}`);
+                const resData = await response.json();
+                
+                globalSchedules = resData.schedules || {};
+                const rawEvents = resData.events || [];
+                const mergedMap = {};
+                
+                if (resData.users && resData.users.length > 0) {
+                    const switcher = document.getElementById('user-switcher');
+                    switcher.innerHTML = ""; 
+                    resData.users.forEach(u => {
+                        switcher.innerHTML += `<option value="${u}">${u}</option>`;
+                    });
+                    
+                    const savedUser = localStorage.getItem('last_selected_gym_user');
+                    if (savedUser && resData.users.includes(savedUser)) {
+                        currentUser = savedUser;
+                    } else {
+                        currentUser = resData.users[0]; 
+                    }
+                    switcher.value = currentUser;
+                    document.getElementById('current-user').innerText = currentUser;
+                }
+                
+                rawEvents.forEach(item => {
+                    let rawTitle = item.title ? item.title.toString() : "未命名課程";
+                    let cleanTitle = rawTitle.trim().replace(/\s+/g, ' ');
+                    cleanTitle = cleanTitle.replace(/^\(\d+\)\s*/, '').trim();
+                    if (/\([^)]+\)$/.test(cleanTitle) && !/mins\)$/i.test(cleanTitle)) {
+                        cleanTitle = cleanTitle.replace(/\s*\([^)]+\)$/, '').trim();
+                    }
+
+                    const matchKey = `${item.start}|||${cleanTitle.toLowerCase()}`;
+                    if (!mergedMap[matchKey]) {
+                        mergedMap[matchKey] = {
+                            title: cleanTitle, 
+                            start: item.start,
+                            rows: [] 
+                        };
+                    }
+                    mergedMap[matchKey].rows.push(item);
+                });
+                
+                // 💡 修正重點 2：將合併後的課表物件轉換為陣列，並根據課程時間進行「早到晚」排序
+                const sortedGroups = Object.values(mergedMap).sort((a, b) => {
+                    // 如果日期不同，先比日期（防護機制）
+                    if (a.start !== b.start) {
+                        return a.start.localeCompare(b.start);
+                    }
+                    // 擷取標題開頭的時間（例如從 "12:15 peach booty" 擷取開頭前5碼 "12:15"）
+                    const timeA = a.title.match(/^\d{2}:\d{2}/) ? a.title.match(/^\d{2}:\d{2}/)[0] : "00:00";
+                    const timeB = b.title.match(/^\d{2}:\d{2}/) ? b.title.match(/^\d{2}:\d{2}/)[0] : "00:00";
+                    return timeA.localeCompare(timeB); // 字串比較能完美處理 "12:15" < "15:30" 升序排序
+                });
+
+                const calendarEvents = sortedGroups.map((group, index) => {
+                    const totalCount = group.rows.length;
+                    const confirmCount = group.rows.filter(r => r.status === "Confirm to attend").length;
+                    const greenPercent = (totalCount === 0) ? 0 : (confirmCount / totalCount) * 100;
+                    
+                    return {
+                        id: 'group_' + index,
+                        title: `(${totalCount}) ${group.title}`, 
+                        start: group.start,
+                        extendedProps: {
+                            rawTitle: group.title,
+                            dateStr: group.start,
+                            memberRows: group.rows,
+                            greenPercent: greenPercent 
+                        }
+                    };
+                });
+                
+                calendar.setOption('events', calendarEvents);
+            } catch (error) { console.error("雲端連線失敗:", error); }
+        }
+
+        async function saveNewEvent(status) {
+            const className = document.getElementById('modal-class-name').value.trim();
+            if(!className) { alert("請選擇或輸入課程名稱！"); return; }
+            window.closeModal();
+
+            const createUrl = `${API_URL}?action=create&title=${encodeURIComponent(className)}&start=${selectedDateStr}&creator=${encodeURIComponent(currentUser)}&attendee=${encodeURIComponent(currentUser)}&status=${encodeURIComponent(status)}`;
+            
+            try {
+                await fetch(createUrl);
+                await loadDataAndRender();
+            } catch(e) { console.error("新增失敗", e); }
+        }
+
+        async function quickAddMe(status) {
+            const targetTitle = selectedEventData.rawTitle;
+            const targetDate = selectedEventData.dateStr;
+            window.closeModal();
+            
+            const createUrl = `${API_URL}?action=create&title=${encodeURIComponent(targetTitle)}&start=${targetDate}&creator=${encodeURIComponent(currentUser)}&attendee=${encodeURIComponent(currentUser)}&status=${encodeURIComponent(status)}`;
+            try {
+                await fetch(createUrl);
+                await loadDataAndRender();
+            } catch(e) { console.error("報名失敗", e); }
+        }
+
+        async function swapMemberRow(rowId, originalAttendee) {
+            if(confirm(`確定要由 [${currentUser}] 頂替 [${originalAttendee}] 的上課名額嗎？`)) {
+                window.closeModal();
+                const swapUrl = `${API_URL}?action=swap&id=${rowId}&newUser=${encodeURIComponent(currentUser)}&oldUser=${encodeURIComponent(originalAttendee)}`;
+                try {
+                    await fetch(swapUrl);
+                    await loadDataAndRender();
+                } catch(e) { console.error("頂替失敗", e); }
+            }
+        }
+
+        async function changeMemberStatus(rowId, newStatus) {
+            const updateUrl = `${API_URL}?action=updateStatus&id=${rowId}&status=${encodeURIComponent(newStatus)}&user=${encodeURIComponent(currentUser)}`;
+            
+            const badge = document.getElementById(`badge-${rowId}`);
+            if (badge) {
+                if(newStatus === "Confirm to attend") {
+                    badge.className = "px-2 py-1 rounded-full text-xs font-bold bg-green-500 text-white";
+                    badge.innerText = "Confirm to attend";
+                } else {
+                    badge.className = "px-2 py-1 rounded-full text-xs font-bold bg-red-500 text-white";
+                    badge.innerText = "Registered";
+                }
+            }
+
+            if (selectedEventData && selectedEventData.memberRows) {
+                const targetRow = selectedEventData.memberRows.find(r => r.id.toString() === rowId.toString());
+                if (targetRow) targetRow.status = newStatus;
+
+                const totalCount = selectedEventData.memberRows.length;
+                const confirmCount = selectedEventData.memberRows.filter(r => r.status === "Confirm to attend").length;
+                const newPercent = (totalCount === 0) ? 0 : (confirmCount / totalCount) * 100;
+                selectedEventData.greenPercent = newPercent;
+
+                if (currentFullCalendarEvent) {
+                    currentFullCalendarEvent.setExtendedProp('greenPercent', newPercent);
+                    const el = calendar.getEventById(currentFullCalendarEvent.id)?.el || document.querySelector(`[data-event-id="${currentFullCalendarEvent.id}"]`);
+                    if (el) {
+                        el.style.background = `linear-gradient(to right, #10B981 0%, #10B981 ${newPercent}%, #EF4444 ${newPercent}%, #EF4444 100%)`;
+                    }
+                }
+            }
+
+            fetch(updateUrl).catch(e => console.error("同步狀態至雲端失敗", e));
+        }
+
+        async function deleteMemberRow(rowId, name) {
+            if(confirm(`確定要將 ［${name}］ 從這堂課程中移除嗎？`)) {
+                const deleteUrl = `${API_URL}?action=delete&id=${rowId}&user=${encodeURIComponent(currentUser)}`;
+                
+                const element = document.getElementById(`trow-${rowId}`);
+                if (element) element.remove();
+                
+                if (selectedEventData && selectedEventData.memberRows) {
+                    selectedEventData.memberRows = selectedEventData.memberRows.filter(r => r.id.toString() !== rowId.toString());
+                }
+
+                const tbody = document.getElementById('attendee-table-body');
+                if (tbody && tbody.children.length === 0) {
+                    window.closeModal();
+                }
+
+                try {
+                    await fetch(deleteUrl);
+                    await loadDataAndRender();
+                } catch(e) { console.error("刪除失敗", e); }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const calendarEl = document.getElementById('calendar');
+            calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                locale: 'zh-tw',
+                height: 'auto',
+                selectable: true,
+                
+                // 💡 修正重點 1：強制顯示單日的所有課程（不限數量），移除「+ 更多」按鈕
+                dayMaxEvents: false, 
+                
+                // 💡 修正附加：強制 FullCalendar 尊重我們在陣列中排序好的順序，而不是私自依據標題字母排序
+                eventOrder: false, 
+
+                eventDidMount: function(info) {
+                    const greenPercent = info.event.extendedProps.greenPercent;
+                    info.el.style.background = `linear-gradient(to right, #10B981 0%, #10B981 ${greenPercent}%, #EF4444 ${greenPercent}%, #EF4444 100%)`;
+                },
+                
+                select: function(info) {
+                    selectedDateStr = info.startStr;
+                    const clickedDate = new Date(info.startStr);
+                    const dayOfWeek = clickedDate.getDay(); 
+                    const dayClasses = globalSchedules[dayOfWeek] || [];
+
+                    const dropdown = document.getElementById('modal-class-dropdown');
+                    dropdown.innerHTML = '<option value="">-- 請選擇試算表中的課程 --</option>';
+                    dayClasses.forEach(c => { dropdown.innerHTML += `<option value="${c}">${c}</option>`; });
+                    dropdown.innerHTML += '<option value="__custom__">✍️ 自訂其他臨時課程</option>';
+
+                    document.getElementById('modal-title').innerText = "登錄新預約 (" + info.startStr + ")";
+                    document.getElementById('modal-class-name').value = "";
+                    
+                    document.getElementById('class-select-block').classList.remove('hidden');
+                    document.getElementById('modal-class-name').classList.add('hidden');
+                    document.getElementById('class-table-block').classList.add('hidden');
+                    
+                    document.getElementById('save-registered-btn').classList.remove('hidden');
+                    document.getElementById('save-confirm-btn').classList.remove('hidden');
+
+                    document.getElementById('modal').classList.remove('hidden');
+                },
+                
+                eventClick: function(info) {
+                    currentFullCalendarEvent = info.event; 
+                    selectedEventData = info.event.extendedProps;
+                    document.getElementById('modal-title').innerText = selectedEventData.rawTitle;
+
+                    document.getElementById('class-select-block').classList.add('hidden');
+                    
+                    document.getElementById('save-registered-btn').classList.add('hidden');
+                    document.getElementById('save-confirm-btn').classList.add('hidden');
+                    
+                    document.getElementById('class-table-block').classList.remove('hidden');
+
+                    const tbody = document.getElementById('attendee-table-body');
+                    tbody.innerHTML = "";
+                    
+                    selectedEventData.memberRows.forEach(member => {
+                        const isConfirm = member.status === "Confirm to attend";
+                        const badgeClass = isConfirm ? "bg-green-500 text-white" : "bg-red-500 text-white";
+                        const originalPrevUser = member.prevUser || ""; 
+                        
+                        const tr = document.createElement('tr');
+                        tr.id = `trow-${member.id}`;
+                        tr.className = "hover:bg-slate-50 transition text-gray-700";
+                        
+                        tr.innerHTML = `
+                            <td class="px-3 py-3 font-medium">${member.attendee}</td>
+                            <td class="px-3 py-3">
+                                <div class="flex items-center gap-1">
+                                    <span id="badge-${member.id}" class="px-2 py-0.5 rounded-full text-xs font-bold ${badgeClass}">
+                                        ${member.status}
+                                    </span>
+                                    <select id="select-${member.id}" class="border rounded text-xs p-0.5 bg-gray-50">
+                                        <option value="Registered" ${!isConfirm ? 'selected':''}>Registered</option>
+                                        <option value="Confirm to attend" ${isConfirm ? 'selected':''}>Confirm to attend</option>
+                                    </select>
+                                </div>
+                            </td>
+                            <td class="px-3 py-3 text-slate-500 text-xs italic">${originalPrevUser}</td>
+                            <td class="px-3 py-3 text-center">
+                                <div class="flex justify-center gap-2">
+                                    <button id="swapbtn-${member.id}" title="交換為當前操作者" class="hover:scale-125 transition text-base">🔄</button>
+                                    <button id="delbtn-${member.id}" title="刪除" class="hover:scale-125 transition text-sm">❌</button>
+                                </div>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+
+                        document.getElementById(`select-${member.id}`).addEventListener('change', function() {
+                            changeMemberStatus(member.id, this.value);
+                        });
+                        document.getElementById(`swapbtn-${member.id}`).addEventListener('click', function() {
+                            swapMemberRow(member.id, member.attendee);
+                        });
+                        document.getElementById(`delbtn-${member.id}`).addEventListener('click', function() {
+                            deleteMemberRow(member.id, member.attendee);
+                        });
+                    });
+
+                    document.getElementById('modal').classList.remove('hidden');
+                }
+            });
+            
+            calendar.render();
+            loadDataAndRender(); 
+        });
+    </script>
+</body>
+</html>
