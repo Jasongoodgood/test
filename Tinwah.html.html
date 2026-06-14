@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartCommute - 969P天華邨24h版</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --container-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #64748b;
+            --accent: #38bdf8;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --warning: #fbbf24;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .app-container {
+            width: 100%;
+            max-width: 450px;
+            background: var(--container-bg);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+            position: relative;
+        }
+        .header-clock-box {
+            text-align: center;
+            background: #0f172a;
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            margin-bottom: 24px;
+        }
+        .header-clock-label {
+            font-size: 0.8rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+        .system-time { 
+            font-size: 2.8rem; 
+            font-weight: 800; 
+            color: var(--text-main);
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -1px;
+        }
+        h3 { text-align: center; margin: 0 0 20px 0; font-weight: 600; color: #94a3b8; font-size: 1.1rem; }
+        
+        /* 漸進式狀態卡片 */
+        .card {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .card-title { font-size: 0.95rem; color: var(--text-muted); margin-bottom: 8px; font-weight: bold;}
+        .card-time-display { font-size: 2.5rem; font-weight: bold; color: var(--accent); margin: 10px 0; letter-spacing: -0.5px; }
+        
+        /* 通用按鈕 */
+        .btn {
+            width: 100%; padding: 12px; border-radius: 8px; border: none; font-size: 1rem;
+            font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 4px;
+            box-sizing: border-box;
+        }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-secondary { background: #475569; color: white; }
+        .btn-success { background: #16a34a; color: white; }
+        .btn-outline { background: transparent; border: 1px solid #475569; color: var(--text-main); margin-top: 16px; }
+        .btn-outline:hover { background: rgba(255,255,255,0.05); }
+        
+        .hidden { display: none !important; }
+        
+        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; display: inline-block; margin-bottom: 12px;}
+        .status-active { background: #0369a1; color: #e0f2fe; }
+        
+        /* 彈出視窗全域覆蓋層 */
+        .popup-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(15, 23, 42, 0.85); z-index: 100;
+            display: flex; justify-content: center; align-items: center;
+            backdrop-filter: blur(4px);
+        }
+        .popup-content {
+            width: 90%; max-width: 380px; background: var(--container-bg);
+            border-radius: 14px; padding: 20px; border: 1px solid rgba(56, 189, 248, 0.3);
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
+        }
+        .popup-title {
+            font-size: 1.1rem; color: var(--text-main); font-weight: bold;
+            margin-bottom: 16px; text-align: center;
+        }
+        .popup-row { display: flex; gap: 12px; margin-bottom: 16px; }
+        .popup-col { flex: 1; display: flex; flex-direction: column; }
+        .popup-col label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; font-weight: bold; }
+        
+        /* 24 小時選單自訂樣式組合 */
+        .time-select-group {
+            display: flex;
+            align-items: center;
+            background: #0f172a;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 4px;
+        }
+        .24h-select {
+            flex: 1; background: transparent; border: none; color: #fff;
+            font-size: 1.3rem; padding: 6px; text-align: center; cursor: pointer;
+            outline: none; font-family: monospace;
+            -webkit-appearance: none; -moz-appearance: none; appearance: none;
+        }
+        .24h-select option { background: var(--container-bg); color: #fff; }
+        .time-separator { color: var(--text-muted); font-weight: bold; font-size: 1.2rem; padding: 0 4px; }
+
+        /* 文字輸入框樣式 */
+        .station-input {
+            width: 100%; background: #0f172a; border: 1px solid #475569;
+            color: #fff; font-size: 1rem; padding: 10px; border-radius: 6px;
+            box-sizing: border-box; outline: none;
+        }
+        .station-input:focus { border-color: var(--accent); }
+
+        /* 鬧鐘響鈴覆蓋層 */
+        .alarm-overlay {
+            position: fixed; top:0; left:0; width:100vw; height:100vh;
+            background: rgba(15, 23, 42, 0.95); z-index: 999;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .alarm-box { text-align: center; padding: 40px; }
+        .alarm-title { font-size: 2.5rem; color: var(--danger); font-weight: bold; margin-bottom: 10px; }
+        .alarm-time { font-size: 4rem; margin-bottom: 30px; font-weight: bold;}
+        
+        /* 巴士列表 */
+        .eta-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .eta-row:last-child { border-bottom: none; }
+        .eta-time { font-size: 1.6rem; font-weight: bold; color: var(--success); font-variant-numeric: tabular-nums; }
+        .network-alert {
+            background: rgba(239, 68, 68, 0.2); border: 1px solid var(--danger);
+            color: #fca5a5; padding: 10px; border-radius: 8px; text-align: center;
+            margin-bottom: 15px; font-size: 0.9rem;
+        }
+        .save-tip {
+            text-align: center; color: var(--success); font-size: 0.8rem;
+            height: 0; opacity: 0; transition: all 0.2s ease; margin-top: 0;
+        }
+        .save-tip.show { height: 18px; opacity: 1; margin-top: 6px; }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <div class="header-clock-box">
+            <div class="header-clock-label">CURRENT TIME 現在時間</div>
+            <div class="system-time" id="systemTime">00:00:00</div>
+        </div>
+
+        <h3>SmartCommute 獨立運行版</h3>
+
+        <div id="moduleA">
+            <div class="card">
+                <span class="status-badge status-active">第一階段：監控中</span>
+                <div class="card-title">⏰ 起床鬧鐘預期時間 (24h)</div>
+                <div class="card-time-display" id="displayLiveA">07:30</div>
+                <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">時間吻合時將自動觸發響鈴</p>
+            </div>
+        </div>
+
+        <div id="moduleB" class="hidden">
+            <div class="card">
+                <span class="status-badge status-active">第二階段：監控中</span>
+                <div class="card-title">🚪 出門鬧鐘預期時間 (24h)</div>
+                <div class="card-time-display" id="displayLiveB">08:15</div>
+                <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">請抓緊時間盥洗準備出門</p>
+            </div>
+        </div>
+
+        <div id="busPanel" class="hidden">
+            <div id="networkAlert" class="network-alert hidden">⚠️ 網路連線不佳，正在自動嘗試重新連接...</div>
+            <div class="card" style="text-align: left;">
+                <div class="card-title" style="color: var(--accent); margin-bottom:12px;">📊 實時到站資訊 (秒級防快取更新)</div>
+                <div style="font-size: 1.3rem; font-weight: bold; margin-bottom: 6px;">城巴 969P 號線</div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">上車站：<span id="displayStationName" style="color: var(--text-main); font-weight: bold;">天華邨</span></div>
+                <div id="etaList">
+                    <div style="text-align:center; color:var(--text-muted);">正在拉取最新班次...</div>
+                </div>
+            </div>
+            <button class="btn btn-secondary" onclick="resetApp()">🔄 重置狀態回到第一階段</button>
+        </div>
+
+        <button class="btn btn-outline" onclick="openSettingsPopup()">⚙️ 設定時間與車站 (彈出式)</button>
+    </div>
+
+    <div id="settingsPopup" class="popup-overlay hidden">
+        <div class="popup-content">
+            <div class="popup-title">⚙️ 調整鬧鐘與車站設定</div>
+            
+            <div class="popup-row">
+                <div class="popup-col">
+                    <label>⏰ 鬧鐘 A (起床)</label>
+                    <div class="time-select-group">
+                        <select id="selectAHour" class="24h-select"></select>
+                        <span class="time-separator">:</span>
+                        <select id="selectAMinute" class="24h-select"></select>
+                    </div>
+                </div>
+                <div class="popup-col">
+                    <label>🚪 鬧鐘 B (出門)</label>
+                    <div class="time-select-group">
+                        <select id="selectBHour" class="24h-select"></select>
+                        <span class="time-separator">:</span>
+                        <select id="selectBMinute" class="24h-select"></select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="popup-col" style="margin-bottom: 16px;">
+                <label>📍 969P 號線上車站名稱</label>
+                <input type="text" id="inputStationName" class="station-input" value="天華邨" placeholder="例如：天華邨">
+            </div>
+
+            <button class="btn btn-success" onclick="saveAlarmsFromPopup()">💾 儲存並關閉</button>
+            <button class="btn btn-secondary" style="margin-top:8px;" onclick="closeSettingsPopup()">取消</button>
+            <div id="globalSaveTip" class="save-tip">✓ 設定已儲存並即時套用！</div>
+        </div>
+    </div>
+
+    <div id="alarmOverlay" class="alarm-overlay hidden">
+        <div class="alarm-box">
+            <div class="alarm-title" id="alarmOverlayTitle">鬧鐘響鈴</div>
+            <div class="alarm-time" id="alarmOverlayTime">00:00</div>
+            <button class="btn btn-danger" onclick="dismissAlarm()">🛑 關閉鬧鐘 (Dismiss)</button>
+            <button class="btn btn-secondary" onclick="snoozeAlarm()">⏳ 延遲 10 分鐘 (Snooze)</button>
+        </div>
+    </div>
+
+    <script>
+        var currentStage = 'WAITING_A'; 
+        var alarmATime = "07:30";
+        var alarmBTime = "08:15";
+        var stationName = "天華邨"; // 已更新預設站名
+        var audioCtx = null;
+        var alarmInterval = null;
+        var busEtaInterval = null;
+
+        function padZero(num) {
+            return num < 10 ? '0' + num : '' + num;
+        }
+
+        // 動態生成 00-23 小時 與 00-59 分鐘 的選單選項
+        function populateSelectOptions() {
+            var sAH = document.getElementById('selectAHour');
+            var sAM = document.getElementById('selectAMinute');
+            var sBH = document.getElementById('selectBHour');
+            var sBM = document.getElementById('selectBMinute');
+            
+            if(!sAH || !sAM || !sBH || !sBM) return;
+
+            sAH.innerHTML = ""; sAM.innerHTML = ""; sBH.innerHTML = ""; sBM.innerHTML = "";
+
+            for(var i = 0; i < 24; i++) {
+                var val = padZero(i);
+                sAH.appendChild(new Option(val, val));
+                sBH.appendChild(new Option(val, val));
+            }
+            for(var j = 0; j < 60; j++) {
+                var val = padZero(j);
+                sAM.appendChild(new Option(val, val));
+                sBM.appendChild(new Option(val, val));
+            }
+        }
+
+        // --- 主時鐘核心 ---
+        function updateClock() {
+            try {
+                var now = new Date();
+                var h = now.getHours();
+                var m = now.getMinutes();
+                var s = now.getSeconds();
+                
+                var hh = padZero(h);
+                var mm = padZero(m);
+                var ss = padZero(s);
+                
+                var currentTimeStr = hh + ':' + mm;
+                
+                var sysTimeEl = document.getElementById('systemTime');
+                if (sysTimeEl) {
+                    sysTimeEl.innerText = hh + ':' + mm + ':' + ss;
+                }
+
+                if (currentStage === 'WAITING_A' && currentTimeStr === alarmATime) {
+                    triggerAlarm('A');
+                } else if (currentStage === 'WAITING_B' && currentTimeStr === alarmBTime) {
+                    triggerAlarm('B');
+                }
+            } catch (e) {
+                var el = document.getElementById('systemTime');
+                if(el) el.innerText = "時鐘運行中...";
+            }
+        }
+
+        // --- 核心安全初始化 ---
+        function initApp() {
+            populateSelectOptions(); 
+
+            try {
+                if (typeof(Storage) !== "undefined") {
+                    var savedA = localStorage.getItem('smartCommute_alarmA');
+                    var savedB = localStorage.getItem('smartCommute_alarmB');
+                    var savedStation = localStorage.getItem('smartCommute_station');
+                    
+                    if (savedA && savedA.indexOf(':') !== -1) alarmATime = savedA;
+                    if (savedB && savedB.indexOf(':') !== -1) alarmBTime = savedB;
+                    if (savedStation) stationName = savedStation;
+                }
+            } catch (err) { console.log("Storage restricted"); }
+
+            syncVariablesToSelects();
+            syncLiveDisplays();
+            updateUIModules();
+        }
+
+        function syncVariablesToSelects() {
+            var partsA = alarmATime.split(':');
+            var partsB = alarmBTime.split(':');
+            
+            var sAH = document.getElementById('selectAHour');
+            var sAM = document.getElementById('selectAMinute');
+            var sBH = document.getElementById('selectBHour');
+            var sBM = document.getElementById('selectBMinute');
+            var inputStation = document.getElementById('inputStationName');
+
+            if(sAH) sAH.value = partsA[0];
+            if(sAM) sAM.value = partsA[1];
+            if(sBH) sBH.value = partsB[0];
+            if(sBM) sBM.value = partsB[1];
+            if(inputStation) inputStation.value = stationName;
+        }
+
+        function syncLiveDisplays() {
+            var elA = document.getElementById('displayLiveA');
+            var elB = document.getElementById('displayLiveB');
+            var elStation = document.getElementById('displayStationName');
+            if(elA) elA.innerText = alarmATime;
+            if(elB) elB.innerText = alarmBTime;
+            if(elStation) elStation.innerText = stationName;
+        }
+
+        updateClock(); 
+        setInterval(updateClock, 1000);
+
+        window.onload = function() {
+            updateClock();
+            initApp();
+        };
+
+        function openSettingsPopup() {
+            syncVariablesToSelects(); 
+            document.getElementById('settingsPopup').classList.remove('hidden');
+        }
+
+        function closeSettingsPopup() {
+            document.getElementById('settingsPopup').classList.add('hidden');
+        }
+
+        // --- 💾 儲存設定功能 ---
+        function saveAlarmsFromPopup() {
+            try {
+                var hA = document.getElementById('selectAHour').value;
+                var mA = document.getElementById('selectAMinute').value;
+                var hB = document.getElementById('selectBHour').value;
+                var mB = document.getElementById('selectBMinute').value;
+                var inputStation = document.getElementById('inputStationName').value;
+                
+                alarmATime = hA + ":" + mA;
+                alarmBTime = hB + ":" + mB;
+                if(inputStation.trim() !== "") stationName = inputStation.trim();
+
+                if (typeof(Storage) !== "undefined") {
+                    localStorage.setItem('smartCommute_alarmA', alarmATime);
+                    localStorage.setItem('smartCommute_alarmB', alarmBTime);
+                    localStorage.setItem('smartCommute_station', stationName);
+                }
+                
+                syncLiveDisplays();
+
+                var tipEl = document.getElementById('globalSaveTip');
+                if (tipEl) {
+                    tipEl.classList.add('show');
+                    setTimeout(function() { 
+                        tipEl.classList.remove('show'); 
+                        closeSettingsPopup(); 
+                    }, 1000);
+                } else {
+                    closeSettingsPopup();
+                }
+            } catch (e) { 
+                console.error(e); 
+                closeSettingsPopup();
+            }
+        }
+
+        function updateUIModules() {
+            var modA = document.getElementById('moduleA');
+            var modB = document.getElementById('moduleB');
+            var busPan = document.getElementById('busPanel');
+
+            if(!modA || !modB || !busPan) return;
+
+            modA.className = 'hidden';
+            modB.className = 'hidden';
+            busPan.className = 'hidden';
+
+            if (currentStage === 'WAITING_A' || currentStage === 'ALARMING_A') {
+                modA.className = '';
+            } else if (currentStage === 'WAITING_B' || currentStage === 'ALARMING_B') {
+                modB.className = '';
+            } else if (currentStage === 'BUS_ETA') {
+                busPan.className = '';
+            }
+        }
+
+        // --- 報警聲效邏輯 ---
+        function startBeep() {
+            try {
+                var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if(!audioCtx && AudioContextClass) audioCtx = new AudioContextClass();
+                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+                
+                alarmInterval = setInterval(function() {
+                    if(!audioCtx) return;
+                    var osc = audioCtx.createOscillator();
+                    var gain = audioCtx.createGain();
+                    osc.type = 'sine'; 
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    osc.connect(gain); 
+                    gain.connect(audioCtx.destination);
+                    osc.start(); 
+                    osc.stop(audioCtx.currentTime + 0.15);
+                }, 500);
+            } catch(e) {}
+        }
+        function stopBeep() { if(alarmInterval) clearInterval(alarmInterval); }
+
+        function triggerAlarm(type) {
+            currentStage = (type === 'A') ? 'ALARMING_A' : 'ALARMING_B';
+            document.getElementById('alarmOverlayTitle').innerText = (type === 'A') ? '⏰ 醒呀！該起床了！' : '🚪 咪磨蹭！該出門了！';
+            document.getElementById('alarmOverlayTime').innerText = (type === 'A') ? alarmATime : alarmBTime;
+            document.getElementById('alarmOverlay').className = 'alarm-overlay';
+            startBeep();
+            updateUIModules();
+        }
+
+        function dismissAlarm() {
+            stopBeep();
+            document.getElementById('alarmOverlay').className = 'alarm-overlay hidden';
+            
+            if (currentStage === 'ALARMING_A') {
+                currentStage = 'WAITING_B';
+                updateUIModules();
+            } else if (currentStage === 'ALARMING_B') {
+                currentStage = 'BUS_ETA';
+                updateUIModules();
+                
+                fetchBusETAPureFrontend();
+                if(busEtaInterval) clearInterval(busEtaInterval);
+                busEtaInterval = setInterval(fetchBusETAPureFrontend, 5000); 
+            }
+        }
+
+        function snoozeAlarm() {
+            stopBeep();
+            document.getElementById('alarmOverlay').className = 'alarm-overlay hidden';
+            if (currentStage === 'ALARMING_A') {
+                var newTime = addMinutes(alarmATime, 10);
+                alarmATime = newTime;
+            } else if (currentStage === 'ALARMING_B') {
+                var newTime = addMinutes(alarmBTime, 10);
+                alarmBTime = newTime;
+            }
+            syncLiveDisplays();
+            updateUIModules();
+        }
+
+        // --- 🚌 巴士 API 請求（已完美對接 969P 天華邨網址） ---
+        function fetchBusETAPureFrontend() {
+            var governmentV2Url = "https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/002951/969P";
+            var cacheBuster = "?_" + new Date().getTime();
+            var finalTargetUrl = governmentV2Url + cacheBuster;
+
+            var cleanUrl = "https://api.allorigins.win/get?url=" + encodeURIComponent(finalTargetUrl);
+
+            fetch(cleanUrl)
+                .then(function(res) { return res.json(); })
+                .then(function(wrapper) {
+                    var rawPayload = JSON.parse(wrapper.contents);
+                    document.getElementById('networkAlert').className = 'network-alert hidden';
+                    renderV2Data(rawPayload.data);
+                })
+                .catch(function(err) {
+                    document.getElementById('networkAlert').className = 'network-alert';
+                });
+        }
+
+        function renderV2Data(allEtaData) {
+            var listContainer = document.getElementById('etaList');
+            if(!listContainer) return;
+            listContainer.innerHTML = "";
+
+            if (!allEtaData || !Array.isArray(allEtaData) || allEtaData.length === 0) {
+                listContainer.innerHTML = '<div style="text-align:center; color:var(--danger); padding: 10px 0;">⚠️ 當前非服務時間或班次脫班</div>';
+                return;
+            }
+
+            var validRuns = allEtaData.filter(function(item) { return item && item.eta && item.eta.trim() !== ""; });
+            if (validRuns.length === 0) {
+                listContainer.innerHTML = '<div style="text-align:center; color:var(--warning); padding: 10px 0;">⚠️ 暫無即將到站的班次</div>';
+                return;
+            }
+
+            validRuns.sort(function(a, b) { return new Date(a.eta) - new Date(b.eta); });
+            
+            validRuns.slice(0, 3).forEach(function(run, index) {
+                var etaTime = new Date(run.eta);
+                var now = new Date();
+                var diffMins = Math.ceil((etaTime - now) / 1000 / 60);
+                var timeString = diffMins <= 0 ? "到站中" : diffMins + " 分鐘";
+
+                var targetH = padZero(etaTime.getHours());
+                var targetM = padZero(etaTime.getMinutes());
+
+                var row = document.createElement('div');
+                row.className = 'eta-row';
+                row.innerHTML = '<div><strong>下班車 (' + (index + 1) + ')</strong><span style="color:var(--text-muted); font-size:0.85rem; margin-left:8px;">(' + targetH + ':' + targetM + ')</span></div><div class="eta-time">' + timeString + '</div>';
+                listContainer.appendChild(row);
+            });
+        }
+
+        function addMinutes(timeStr, mins) {
+            var parts = timeStr.split(':');
+            var h = parseInt(parts[0], 10);
+            var m = parseInt(parts[1], 10);
+            m += mins;
+            if (m >= 60) { 
+                h = (h + Math.floor(m / 60)) % 24; 
+                m = m % 60; 
+            }
+            return padZero(h) + ':' + padZero(m);
+        }
+
+        function resetApp() {
+            if(busEtaInterval) clearInterval(busEtaInterval);
+            currentStage = 'WAITING_A';
+            initApp();
+        }
+    </script>
+</body>
+</html>
