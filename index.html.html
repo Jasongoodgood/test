@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的快捷面板 (同視窗流暢版)</title>
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-color: #333;
+            --primary-color: #3498db;
+            --delete-color: #e74c3c;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { margin-bottom: 30px; font-weight: 600; }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        .shortcut-card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            height: 140px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            padding: 15px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .shortcut-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.15);
+        }
+
+        .shortcut-name {
+            font-size: 1.1rem;
+            font-weight: bold;
+            word-break: break-all;
+            margin-bottom: 5px;
+        }
+
+        .shortcut-url {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            word-break: break-all;
+        }
+
+        .action-btn {
+            position: absolute;
+            top: 8px;
+            background: none;
+            border: none;
+            font-size: 0.9rem;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .shortcut-card:hover .action-btn { opacity: 0.6; }
+        .shortcut-card:hover .action-btn:hover { opacity: 1; }
+        .edit-btn { right: 32px; color: var(--primary-color); }
+        .delete-btn { right: 8px; color: var(--delete-color); }
+
+        .add-card {
+            background-color: transparent;
+            border: 3px dashed #b2bec3;
+            border-radius: 12px;
+            height: 140px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 3rem;
+            color: #b2bec3;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-sizing: border-box;
+        }
+
+        .add-card:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+            background-color: rgba(52, 152, 219, 0.05);
+        }
+
+        /* 提示使用者如何返回的小區塊 */
+        .info-tip {
+            margin-top: 20px;
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            background: #ffeaa7;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border-left: 5px solid #fdcb6e;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>我的快捷面板</h1>
+    <div class="info-tip">💡 提示：點擊任何方格（包含 Google/YouTube）都會在<b>本分頁直接打開</b>。想回來時，隨時按瀏覽器的「⬅️ 上一頁」即可無縫返回此主頁！</div>
+    <br>
+
+    <div class="grid-container" id="gridContainer">
+        <div class="add-card" id="addBtn" title="新增方格">+</div>
+    </div>
+
+    <script>
+        const gridContainer = document.getElementById('gridContainer');
+        const addBtn = document.getElementById('addBtn');
+
+        const defaultShortcuts = [
+            { name: 'Google', url: 'https://www.google.com' },
+            { name: 'YouTube', url: 'https://www.youtube.com' }
+        ];
+
+        let shortcuts = JSON.parse(localStorage.getItem('my_shortcuts_v3')) || defaultShortcuts;
+
+        renderShortcuts();
+
+        function renderShortcuts() {
+            const cards = document.querySelectorAll('.shortcut-card');
+            cards.forEach(card => card.remove());
+
+            shortcuts.forEach((item, index) => {
+                const card = document.createElement('div');
+                card.className = 'shortcut-card';
+                
+                card.onclick = (e) => {
+                    if (!e.target.classList.contains('action-btn')) {
+                        let targetUrl = item.url;
+                        if (!/^https?:\/\//i.test(targetUrl)) {
+                            targetUrl = 'https://' + targetUrl;
+                        }
+                        // 關鍵改動：不在 iframe 開啟，也不開新分頁，直接在當前視窗跳轉
+                        window.location.href = targetUrl;
+                    }
+                };
+
+                card.innerHTML = `
+                    <button class="action-btn edit-btn" onclick="editCard(${index})">✏️</button>
+                    <button class="action-btn delete-btn" onclick="deleteCard(${index})">❌</button>
+                    <div class="shortcut-name">${item.name}</div>
+                    <div class="shortcut-url">${item.url}</div>
+                `;
+
+                gridContainer.insertBefore(card, addBtn);
+            });
+
+            localStorage.setItem('my_shortcuts_v3', JSON.stringify(shortcuts));
+        }
+
+        // 新增方格
+        addBtn.onclick = () => {
+            const name = prompt("請輸入方格名稱:");
+            if (!name) return;
+            const url = prompt("請輸入網頁地址:", "https://");
+            if (!url || url === "https://") return;
+
+            shortcuts.push({ name: name, url: url });
+            renderShortcuts();
+        };
+
+        // 修改方格
+        function editCard(index) {
+            const current = shortcuts[index];
+            const newName = prompt("請更改方格名稱:", current.name);
+            const newUrl = prompt("請更改網頁地址:", current.url);
+            if (!newName || !newUrl) return;
+
+            shortcuts[index] = { name: newName, url: newUrl };
+            renderShortcuts();
+        }
+
+        // 刪除方格
+        function deleteCard(index) {
+            if (confirm(`確定要刪除「${shortcuts[index].name}」嗎？`)) {
+                shortcuts.splice(index, 1);
+                renderShortcuts();
+            }
+        }
+    </script>
+</body>
+</html>
