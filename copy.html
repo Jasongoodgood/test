@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimalist Multi-Box Storage & Clipboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen p-8 text-gray-800 font-sans">
+
+  <div class="max-w-xl mx-auto space-y-8">
+    
+    <section class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+      <h2 class="text-lg font-bold mb-4 flex justify-between items-center">
+        <span>1. 檔案批次上下載</span>
+        <div class="space-x-2">
+          <button onclick="clearFiles()" class="text-xs bg-gray-200 text-gray-600 px-3 py-1 rounded hover:bg-gray-300 transition">清空暫存</button>
+          <button onclick="downloadFiles()" class="text-xs bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition">全部下載</button>
+        </div>
+      </h2>
+      
+      <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 bg-gray-50/50">
+        <div class="flex justify-center mb-4">
+          <label class="cursor-pointer bg-white border border-gray-300 hover:border-gray-400 text-gray-700 text-sm px-4 py-2 rounded-lg shadow-sm transition">
+            <input type="file" id="fileInput" multiple class="hidden" onchange="handleFiles(this.files)">
+            選擇檔案 / 圖片 (支援多選)
+          </label>
+        </div>
+        <div id="fileList" class="space-y-2 text-xs"></div>
+      </div>
+    </section>
+
+    <section class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 relative">
+      <h2 class="text-lg font-bold mb-4 flex justify-between items-center">
+        <span>2. 文字點擊複製</span>
+        <button onclick="addTextBox()" class="text-xs bg-black text-white px-2.5 py-1 rounded-md hover:bg-gray-800 transition font-bold text-sm flex items-center justify-center shadow-sm">＋ 新增文字框</button>
+      </h2>
+      
+      <div id="textZoneContainer" class="space-y-4"></div>
+      
+      <div id="toast" class="fixed bottom-8 right-8 bg-black/80 text-white text-xs px-3 py-1.5 rounded opacity-0 transition-opacity duration-200 pointer-events-none z-50">Copied!</div>
+    </section>
+
+  </div>
+
+  <script>
+    let fileStorage = [];
+    // ponytail: 文字改用物件陣列儲存，動態擴充並完美對應 localStorage
+    let textStorage = JSON.parse(localStorage.getItem('saved_texts')) || [""];
+
+    window.onload = function() {
+      try { fileStorage = JSON.parse(localStorage.getItem('saved_files')) || []; } catch (e) { fileStorage = []; }
+      refreshListView();
+      renderTextBoxes();
+    };
+
+    /* ===== 檔案處理區 ===== */
+    function handleFiles(files) {
+      if (!files.length) return;
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const fileObj = { name: file.name, data: e.target.result };
+          fileStorage.push(fileObj);
+          renderSingleFile(fileObj);
+          try { localStorage.setItem('saved_files', JSON.stringify(fileStorage)); } catch (err) {}
+        };
+        reader.readAsDataURL(file);
+      });
+      document.getElementById('fileInput').value = ''; 
+    }
+
+    function renderSingleFile(fileObj) {
+      const list = document.getElementById('fileList');
+      const div = document.createElement('div');
+      div.className = 'flex justify-between items-center bg-white p-2.5 rounded border border-gray-200 hover:bg-gray-100 cursor-pointer transition shadow-sm';
+      div.onclick = () => triggerDownload(fileObj.data, fileObj.name);
+      div.innerHTML = `<span class="truncate font-medium text-gray-700 max-w-[75%] flex items-center gap-2">📄 <span class="truncate" title="${fileObj.name}">${fileObj.name}</span></span><span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-1 rounded shrink-0 font-mono">點擊下載</span>`;
+      list.appendChild(div);
+    }
+
+    function refreshListView() {
+      document.getElementById('fileList').innerHTML = ''; 
+      fileStorage.forEach(fileObj => renderSingleFile(fileObj));
+    }
+
+    function triggerDownload(url, filename) {
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    }
+
+    function downloadFiles() {
+      if (!fileStorage.length) return alert('沒有檔案可下載');
+      fileStorage.forEach(file => triggerDownload(file.data, file.name));
+    }
+
+    function clearFiles() {
+      fileStorage = []; localStorage.removeItem('saved_files'); document.getElementById('fileList').innerHTML = '';
+    }
+
+    /* ===== 多文字框處理區 ===== */
+    // ponytail: 渲染所有文字框，並包含獨立的複製與刪除按鈕
+    function renderTextBoxes() {
+      const container = document.getElementById('textZoneContainer');
+      container.innerHTML = '';
+      
+      textStorage.forEach((textValue, index) => {
+        const div = document.createElement('div');
+        div.className = 'space-y-1.5 relative border border-gray-100 p-3 rounded-lg bg-gray-50/50';
+        div.innerHTML = `
+          <div class="flex justify-between items-center text-xs text-gray-400 font-mono">
+            <span>BOX #${index + 1}</span>
+            ${textStorage.length > 1 ? `<button onclick="removeTextBox(${index})" class="text-red-500 hover:text-red-700">刪除</button>` : ''}
+          </div>
+          <textarea rows="3" placeholder="在此輸入或貼上文字..." oninput="updateTextValue(${index}, this.value)"
+            class="w-full p-3 border border-gray-200 rounded-lg focus:outline-none focus:border-gray-400 resize-none text-sm bg-white shadow-sm">${textValue}</textarea>
+          <button onclick="copySpecificText(${index})" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1.5 rounded-md text-xs transition">
+            複製此框文字
+          </button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function addTextBox() {
+      textStorage.push("");
+      saveTextData();
+      renderTextBoxes();
+    }
+
+    function removeTextBox(index) {
+      textStorage.splice(index, 1);
+      saveTextData();
+      renderTextBoxes();
+    }
+
+    function updateTextValue(index, val) {
+      textStorage[index] = val;
+      saveTextData();
+    }
+
+    function saveTextData() {
+      localStorage.setItem('saved_texts', JSON.stringify(textStorage));
+    }
+
+    function copySpecificText(index) {
+      const text = textStorage[index];
+      if (!text.trim()) return;
+      navigator.clipboard.writeText(text).then(() => {
+        const toast = document.getElementById('toast');
+        toast.classList.remove('opacity-0');
+        setTimeout(() => toast.classList.add('opacity-0'), 1200);
+      });
+    }
+  </script>
+</body>
+</html>
