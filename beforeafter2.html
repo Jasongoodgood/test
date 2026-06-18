@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Max-Boundary Adaptive Comparator</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    html, body { height: 100vh; overflow: hidden; background-color: #0b0f19; }
+    
+    /* 預設直向：上下排列，高度由照片比例主導 */
+    #workspace { 
+      display: flex;
+      flex-direction: column; 
+      justify-content: center;
+      align-items: center;
+    }
+    
+    /* 橫向：左右排列，寬度由照片比例主導 */
+    @media (orientation: landscape) {
+      #workspace { 
+        flex-direction: row; 
+      }
+    }
+  </style>
+</head>
+<body class="text-gray-100 flex flex-col justify-between p-0.5 select-none">
+
+  <header class="flex items-center justify-between px-2 h-9 flex-shrink-0 border-b border-gray-800">
+    <h1 class="text-[10px] font-bold tracking-wider text-gray-500">MAX BOUNDARY (NO CLIPPING)</h1>
+    <div class="flex items-center gap-1">
+      <button onclick="addBoxOnly()" class="bg-gray-800 hover:bg-gray-700 text-emerald-400 w-6 h-6 rounded font-bold text-xs">+</button>
+      <button onclick="removeLastBox()" class="bg-gray-800 hover:bg-gray-700 text-rose-400 w-6 h-6 rounded font-bold text-xs">-</button>
+      <button onclick="clearAllPics()" class="bg-rose-950/30 hover:bg-rose-900 text-rose-400 px-1.5 py-0.5 rounded text-[10px] transition">清空</button>
+      <label class="bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded cursor-pointer text-[10px] font-medium transition">
+        上傳
+        <input type="file" id="upload" multiple accept="image/*" class="hidden">
+      </label>
+    </div>
+  </header>
+
+  <main id="workspace" class="flex-1 w-full gap-1 p-1 min-h-0 overflow-hidden">
+    </main>
+
+  <section class="bg-gray-900/90 border border-gray-800/60 h-10 flex-shrink-0 p-1 overflow-y-auto">
+    <div id="list" class="flex flex-wrap gap-1 items-center"></div>
+  </section>
+
+  <script>
+    let db = {};
+    try { db = JSON.parse(localStorage.getItem('pic_db') || '{}'); } catch(e) {}
+    let totalBoxes = parseInt(localStorage.getItem('box_count') || '2');
+
+    window.addEventListener('DOMContentLoaded', () => initWorkspace());
+
+    document.getElementById('upload').addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      if (!files.length) return;
+
+      for (const file of files) {
+        try {
+          const dataUrl = await readFileAsDataURL(file);
+          const compressedDataUrl = await compressImage(dataUrl);
+          const date = new Date(file.lastModified || Date.now());
+          const dd = String(date.getDate()).padStart(2, '0');
+          const mm = String(date.getMonth() + 1).padStart(2, '0');
+          const uniqueId = Math.random().toString(36).substring(2, 5);
+          
+          let name = `Created at ${dd}/${mm}/${date.getFullYear()}_${uniqueId}_${file.name}`;
+          db[name] = compressedDataUrl;
+        } catch (err) {}
+      }
+      saveToStorage();
+      renderListAndDropdowns();
+      e.target.value = '';
+    });
+
+    function readFileAsDataURL(file) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(event.target.result);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function compressImage(dataUrl) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.src = dataUrl;
+        img.onload = () => {
+          const maxW = 1200;
+          let w = img.width, h = img.height;
+          if (w > maxW) { h = Math.round((h * maxW) / w); w = maxW; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.75));
+        };
+        img.onerror = () => resolve(dataUrl);
+      });
+    }
+
+    function saveToStorage() {
+      try {
+        localStorage.setItem('pic_db', JSON.stringify(db));
+        localStorage.setItem('box_count', totalBoxes);
+        const currentVals = Array.from(document.querySelectorAll('.box-select')).map(s => s.value);
+        localStorage.setItem('selected_vals', JSON.stringify(currentVals));
+      } catch (e) {}
+    }
+
+    function initWorkspace() {
+      const workspace = document.getElementById('workspace');
+      let savedVals = [];
+      try { savedVals = JSON.parse(localStorage.getItem('selected_vals') || '[]'); } catch(e) {}
+      
+      workspace.innerHTML = '';
+      for(let i = 0; i < totalBoxes; i++) createBoxDOM(i);
+      
+      renderListAndDropdowns();
+
+      const selects = document.querySelectorAll('.box-select');
+      selects.forEach((s, i) => {
+        if (savedVals[i] && db[savedVals[i]]) {
+          s.value = savedVals[i];
+          updateImg(i);
+        }
+      });
+    }
+
+    function createBoxDOM(index) {
+      const workspace = document.getElementById('workspace');
+      const newBox = document.createElement('div');
+      // ponytail: 利用 flex-1 加上 min-h-0 / min-w-0 形成彈性邊界容器
+      newBox.className = "box-item flex-1 flex flex-col relative bg-gray-950 rounded overflow-hidden min-h-0 min-w-0 w-full h-full";
+      newBox.innerHTML = `
+        <select class="box-select absolute top-1 left-1 z-10 bg-gray-900/80 backdrop-blur text-gray-300 border border-gray-800 rounded px-1 py-0.5 text-[9px] max-w-[85%] opacity-30 hover:opacity-100 transition-opacity focus:outline-none focus:opacity-100" onchange="updateImg(${index})">
+          <option value="">選擇圖片...</option>
+        </select>
+        <div class="w-full h-full flex items-center justify-center min-h-0 min-w-0">
+          <img id="img-${index}" class="max-w-full max-h-full object-contain hidden" alt="Preview">
+        </div>`;
+      workspace.appendChild(newBox);
+    }
+
+    function renderListAndDropdowns() {
+      const selects = document.querySelectorAll('.box-select');
+      const list = document.getElementById('list');
+      if (!list) return;
+      list.innerHTML = '';
+
+      selects.forEach(s => {
+        const currVal = s.value;
+        s.innerHTML = `<option value="">選擇圖片...</option>`;
+        Object.keys(db).forEach(id => { s.innerHTML += `<option value="${id}">${id}</option>`; });
+        s.value = db[currVal] ? currVal : "";
+      });
+
+      Object.keys(db).forEach(id => {
+        list.innerHTML += `
+          <div class="inline-flex items-center gap-1 bg-gray-800/40 px-1 py-0.5 rounded border border-gray-700 max-w-[120px]">
+            <img src="${db[id]}" class="w-4 h-4 object-cover rounded bg-gray-900 flex-shrink-0">
+            <span contenteditable="true" class="text-[8px] text-gray-400 font-mono truncate flex-1 focus:outline-none" onblur="rename('${id}', this.innerText)">${id}</span>
+          </div>`;
+      });
+    }
+
+    function updateImg(index) {
+      const select = document.querySelectorAll('.box-select')[index];
+      const img = document.getElementById(`img-${index}`);
+      if (select && select.value && db[select.value]) {
+        img.src = db[select.value];
+        img.classList.remove('hidden');
+      } else if (img) {
+        img.classList.add('hidden');
+      }
+      saveToStorage();
+    }
+
+    function rename(oldName, newName) {
+      newName = newName.trim().replace(/\n/g, '');
+      if (!newName || oldName === newName) return renderListAndDropdowns();
+      db[newName] = db[oldName]; delete db[oldName];
+      saveToStorage(); renderListAndDropdowns();
+    }
+
+    function addBoxOnly() {
+      createBoxDOM(totalBoxes); totalBoxes++;
+      saveToStorage(); renderListAndDropdowns();
+    }
+
+    function removeLastBox() {
+      if (totalBoxes <= 2) return alert('最少需要 2 個箱子！');
+      document.getElementById('workspace').removeChild(document.getElementById('workspace').lastElementChild);
+      totalBoxes--; saveToStorage();
+    }
+
+    function clearAllPics() {
+      if (confirm('確定要清空所有圖片嗎？')) {
+        db = {}; localStorage.clear(); renderListAndDropdowns();
+        document.querySelectorAll('[id^="img-"]').forEach(img => img.classList.add('hidden'));
+      }
+    }
+  </script>
+</body>
+</html>
